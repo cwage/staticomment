@@ -1,0 +1,15 @@
+services:
+  staticomment:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      STATICOMMENT_GIT_REPO: "${STATICOMMENT_GIT_REPO}"
+      STATICOMMENT_BRANCH: "${STATICOMMENT_BRANCH:-main}"
+      STATICOMMENT_COMMENTS_PATH: "${STATICOMMENT_COMMENTS_PATH:-_data/comments}"
+      STATICOMMENT_PORT: "8080"
+      STATICOMMENT_ALLOWED_ORIGINS: "${STATICOMMENT_ALLOWED_ORIGINS}"
+      STATICOMMENT_SSH_KEY_PATH: "/app/.ssh/id_ed25519"
+    volumes:
+      - "${SSH_KEY_PATH:-~/.ssh/id_ed25519}:/app/.ssh/id_ed25519:ro"
+    restart: unless-stopped
