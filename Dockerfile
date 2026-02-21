@@ -9,7 +9,11 @@ RUN CGO_ENABLED=0 go build -o /staticomment .
 # Runtime stage
 FROM alpine:3.21
 RUN apk add --no-cache git openssh-client
-RUN mkdir -p /app/.ssh && ssh-keyscan github.com >> /app/.ssh/known_hosts 2>/dev/null
+# Seed known_hosts with common git hosting providers as a cache.
+# The application will ssh-keyscan the configured host at startup for any host
+# not already present.
+RUN mkdir -p /app/.ssh && \
+    (ssh-keyscan github.com gitlab.com 2>/dev/null >> /app/.ssh/known_hosts || true)
 COPY --from=build /staticomment /app/staticomment
 WORKDIR /app
 ENTRYPOINT ["/app/staticomment"]

@@ -32,19 +32,83 @@ func (g *GitRepo) sshCommand() string {
 	return fmt.Sprintf("ssh -i %s -o UserKnownHostsFile=%s", g.cfg.SSHKeyPath, knownHostsPath)
 }
 
-// refreshHostKeys extracts the git host from the repo URL and runs ssh-keyscan
-// to update the known_hosts file. This handles the case where baked-in host keys
-// have been rotated.
+// ensureHostKeys checks whether the configured git host is already in known_hosts.
+// If not, it runs ssh-keyscan to fetch the host keys. This runs once at startup
+// so that any git host (GitHub, GitLab, Gitea, self-hosted, etc.) works without
+// manual known_hosts configuration.
+func (g *GitRepo) ensureHostKeys() error {
+	if g.cfg.SSHInsecure {
+		return nil
+	}
+	host := extractHost(g.cfg.GitRepo)
+	if host == "" {
+		return fmt.Errorf("could not extract host from repo URL: %s", g.cfg.GitRepo)
+	}
+	if hostInKnownHosts(host) {
+		log.Printf("git: host key for %s already in known_hosts", host)
+		return nil
+	}
+	log.Printf("git: host key for %s not found, running ssh-keyscan", host)
+	return scanAndAppendHostKeys(host)
+}
+
+// refreshHostKeys replaces the host keys for the configured git host.
+// Used as a fallback when a git operation fails due to stale keys.
 func (g *GitRepo) refreshHostKeys() error {
 	host := extractHost(g.cfg.GitRepo)
 	if host == "" {
 		return fmt.Errorf("could not extract host from repo URL: %s", g.cfg.GitRepo)
 	}
 	log.Printf("git: refreshing SSH host keys for %s", host)
+	// Overwrite rather than append to replace potentially stale keys
+	return scanAndWriteHostKeys(host)
+}
+
+func hostInKnownHosts(host string) bool {
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, host+" ") || strings.HasPrefix(line, host+",") {
+			return true
+		}
+	}
+	return false
+}
+
+func scanHostKeys(host string) ([]byte, error) {
 	cmd := exec.Command("ssh-keyscan", host)
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("ssh-keyscan %s: %w", host, err)
+		return nil, fmt.Errorf("ssh-keyscan %s: %w", host, err)
+	}
+	return out, nil
+}
+
+func scanAndAppendHostKeys(host string) error {
+	out, err := scanHostKeys(host)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
+		return fmt.Errorf("creating .ssh dir: %w", err)
+	}
+	f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("opening known_hosts: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(out); err != nil {
+		return fmt.Errorf("appending to known_hosts: %w", err)
+	}
+	return nil
+}
+
+func scanAndWriteHostKeys(host string) error {
+	out, err := scanHostKeys(host)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
 		return fmt.Errorf("creating .ssh dir: %w", err)
@@ -86,6 +150,13 @@ func (g *GitRepo) Clone() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	// Ensure the configured git host is in known_hosts before any SSH operation.
+	// For hosts baked into the image (GitHub, GitLab), this is a no-op.
+	// For self-hosted or other providers, this runs ssh-keyscan automatically.
+	if err := g.ensureHostKeys(); err != nil {
+		log.Printf("warning: could not ensure host keys: %v", err)
+	}
+
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err == nil {
 		log.Println("git: repo already cloned, pulling instead")
 		return g.pullLocked()
@@ -98,12 +169,12 @@ func (g *GitRepo) Clone() error {
 	cloneArgs := []string{"clone", "--branch", g.cfg.Branch, "--single-branch", g.cfg.GitRepo, repoDir}
 	err := g.run("/app", "git", cloneArgs...)
 	if err != nil && !g.cfg.SSHInsecure {
+		// Clone failed — possibly stale host keys. Refresh and retry once.
 		log.Printf("git clone failed, refreshing SSH host keys and retrying")
 		if scanErr := g.refreshHostKeys(); scanErr != nil {
 			log.Printf("ssh-keyscan failed: %v", scanErr)
 			return fmt.Errorf("git clone: %w", err)
 		}
-		// Clean up failed clone attempt
 		os.RemoveAll(repoDir)
 		os.MkdirAll(repoDir, 0755)
 		err = g.run("/app", "git", cloneArgs...)
