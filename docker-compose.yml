@@ -10,6 +10,7 @@ services:
       STATICOMMENT_PORT: "8080"
       STATICOMMENT_ALLOWED_ORIGINS: "${STATICOMMENT_ALLOWED_ORIGINS}"
       STATICOMMENT_SSH_KEY_PATH: "/app/.ssh/id_ed25519"
+      STATICOMMENT_SSH_INSECURE: "${STATICOMMENT_SSH_INSECURE:-0}"
     volumes:
       - "${SSH_KEY_PATH:-~/.ssh/id_ed25519}:/app/.ssh/id_ed25519:ro"
     restart: unless-stopped

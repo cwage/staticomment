@@ -44,6 +44,9 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit request body to prevent resource exhaustion
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
@@ -58,6 +61,12 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Validate required fields
 	if name == "" || body == "" || slug == "" || redirectURL == "" {
 		h.errorRedirect(w, r, redirectURL, "Missing required fields (name, body, slug, url)")
+		return
+	}
+
+	// Validate redirect URL against allowed origins to prevent open redirect
+	if !h.isAllowedRedirect(redirectURL) {
+		http.Error(w, "Forbidden: redirect URL origin not allowed", http.StatusForbidden)
 		return
 	}
 
@@ -100,7 +109,13 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("comment saved and pushed: %s", relPath)
 
 	// Redirect back to the post
-	http.Redirect(w, r, redirectURL+"#comment-submitted", http.StatusFound)
+	u, err := url.Parse(redirectURL)
+	if err != nil {
+		http.Error(w, "Bad redirect URL", http.StatusBadRequest)
+		return
+	}
+	u.Fragment = "comment-submitted"
+	http.Redirect(w, r, u.String(), http.StatusSeeOther)
 }
 
 func (h *CommentHandler) writeComment(c Comment) (string, error) {
@@ -158,14 +173,30 @@ func (h *CommentHandler) checkOrigin(r *http.Request) bool {
 
 func (h *CommentHandler) errorRedirect(w http.ResponseWriter, r *http.Request, redirectURL, msg string) {
 	if redirectURL != "" {
-		sep := "?"
-		if strings.Contains(redirectURL, "?") {
-			sep = "&"
+		u, err := url.Parse(redirectURL)
+		if err == nil {
+			q := u.Query()
+			q.Set("comment_error", msg)
+			u.RawQuery = q.Encode()
+			http.Redirect(w, r, u.String(), http.StatusSeeOther)
+			return
 		}
-		http.Redirect(w, r, redirectURL+sep+"comment_error="+url.QueryEscape(msg), http.StatusFound)
-		return
 	}
 	http.Error(w, msg, http.StatusBadRequest)
+}
+
+func (h *CommentHandler) isAllowedRedirect(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	origin := u.Scheme + "://" + u.Host
+	for _, allowed := range h.cfg.AllowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func isValidSlug(slug string) bool {

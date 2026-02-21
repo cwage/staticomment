@@ -3,16 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 type Config struct {
-	GitRepo      string
-	Branch       string
-	CommentsPath string
-	Port         string
+	GitRepo        string
+	Branch         string
+	CommentsPath   string
+	Port           string
 	AllowedOrigins []string
-	SSHKeyPath   string
+	SSHKeyPath     string
+	SSHInsecure    bool
 }
 
 func LoadConfig() (*Config, error) {
@@ -21,6 +23,17 @@ func LoadConfig() (*Config, error) {
 		CommentsPath: envOrDefault("STATICOMMENT_COMMENTS_PATH", "_data/comments"),
 		Port:         envOrDefault("STATICOMMENT_PORT", "8080"),
 		SSHKeyPath:   envOrDefault("STATICOMMENT_SSH_KEY_PATH", "/app/.ssh/id_ed25519"),
+	}
+
+	cfg.SSHInsecure = os.Getenv("STATICOMMENT_SSH_INSECURE") == "1"
+
+	// Validate CommentsPath is relative and clean
+	if filepath.IsAbs(cfg.CommentsPath) {
+		return nil, fmt.Errorf("STATICOMMENT_COMMENTS_PATH must be a relative path")
+	}
+	cfg.CommentsPath = filepath.Clean(cfg.CommentsPath)
+	if strings.HasPrefix(cfg.CommentsPath, "..") {
+		return nil, fmt.Errorf("STATICOMMENT_COMMENTS_PATH must not escape the repo directory")
 	}
 
 	cfg.GitRepo = os.Getenv("STATICOMMENT_GIT_REPO")

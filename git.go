@@ -21,7 +21,10 @@ func NewGitRepo(cfg *Config) *GitRepo {
 }
 
 func (g *GitRepo) sshCommand() string {
-	return fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null", g.cfg.SSHKeyPath)
+	if g.cfg.SSHInsecure {
+		return fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null", g.cfg.SSHKeyPath)
+	}
+	return fmt.Sprintf("ssh -i %s", g.cfg.SSHKeyPath)
 }
 
 func (g *GitRepo) run(dir string, name string, args ...string) error {
@@ -78,6 +81,8 @@ func (g *GitRepo) Pull() error {
 	return g.pullLocked()
 }
 
+const pushMaxRetries = 3
+
 func (g *GitRepo) CommitAndPush(filePath, slug string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -95,11 +100,18 @@ func (g *GitRepo) CommitAndPush(filePath, slug string) error {
 		return fmt.Errorf("git commit: %w", err)
 	}
 
-	if err := g.run(repoDir, "git", "push"); err != nil {
-		return fmt.Errorf("git push: %w", err)
+	// Retry push with rebase on failure (e.g. non-fast-forward rejection)
+	for attempt := 0; attempt < pushMaxRetries; attempt++ {
+		err := g.run(repoDir, "git", "push")
+		if err == nil {
+			return nil
+		}
+		log.Printf("git push attempt %d failed: %v, retrying after pull --rebase", attempt+1, err)
+		if pullErr := g.pullLocked(); pullErr != nil {
+			return fmt.Errorf("git pull during push retry: %w", pullErr)
+		}
 	}
-
-	return nil
+	return fmt.Errorf("git push failed after %d attempts", pushMaxRetries)
 }
 
 // FullPath returns the absolute path for a file relative to the repo root.
