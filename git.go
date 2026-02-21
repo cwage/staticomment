@@ -136,13 +136,29 @@ func extractHost(repo string) string {
 	return u.Hostname()
 }
 
+// sanitizeArgs redacts credentials from URL-like arguments for safe logging.
+func sanitizeArgs(args []string) []string {
+	safe := make([]string, len(args))
+	for i, arg := range args {
+		if strings.Contains(arg, "://") {
+			if u, err := url.Parse(arg); err == nil && u.User != nil {
+				u.User = nil
+				safe[i] = u.String()
+				continue
+			}
+		}
+		safe[i] = arg
+	}
+	return safe
+}
+
 func (g *GitRepo) run(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_SSH_COMMAND="+g.sshCommand())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	log.Printf("git: running %s %v in %s", name, args, dir)
+	log.Printf("git: running %s %v in %s", name, sanitizeArgs(args), dir)
 	return cmd.Run()
 }
 
@@ -175,8 +191,12 @@ func (g *GitRepo) Clone() error {
 			log.Printf("ssh-keyscan failed: %v", scanErr)
 			return fmt.Errorf("git clone: %w", err)
 		}
-		os.RemoveAll(repoDir)
-		os.MkdirAll(repoDir, 0755)
+		if rmErr := os.RemoveAll(repoDir); rmErr != nil {
+			return fmt.Errorf("removing repo dir before retry: %w", rmErr)
+		}
+		if mkErr := os.MkdirAll(repoDir, 0755); mkErr != nil {
+			return fmt.Errorf("creating repo dir before retry: %w", mkErr)
+		}
 		err = g.run("/app", "git", cloneArgs...)
 	}
 	if err != nil {
@@ -231,6 +251,8 @@ func (g *GitRepo) CommitAndPush(filePath, slug string) error {
 		}
 		log.Printf("git push attempt %d failed: %v, retrying after pull --rebase", attempt+1, err)
 		if pullErr := g.pullLocked(); pullErr != nil {
+			// Rebase may have left a conflicted state — abort it
+			g.run(repoDir, "git", "rebase", "--abort")
 			return fmt.Errorf("git pull during push retry: %w", pullErr)
 		}
 	}

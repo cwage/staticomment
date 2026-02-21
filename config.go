@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,9 +48,14 @@ func LoadConfig() (*Config, error) {
 	}
 	for _, o := range strings.Split(origins, ",") {
 		o = strings.TrimSpace(o)
-		if o != "" {
-			cfg.AllowedOrigins = append(cfg.AllowedOrigins, o)
+		if o == "" {
+			continue
 		}
+		u, err := url.Parse(o)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return nil, fmt.Errorf("STATICOMMENT_ALLOWED_ORIGINS: invalid origin %q (must include scheme and host, e.g. https://example.com)", o)
+		}
+		cfg.AllowedOrigins = append(cfg.AllowedOrigins, o)
 	}
 	if len(cfg.AllowedOrigins) == 0 {
 		return nil, fmt.Errorf("STATICOMMENT_ALLOWED_ORIGINS must contain at least one origin")

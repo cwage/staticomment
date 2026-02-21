@@ -58,15 +58,15 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(r.FormValue("slug"))
 	redirectURL := strings.TrimSpace(r.FormValue("url"))
 
-	// Validate required fields
-	if name == "" || body == "" || slug == "" || redirectURL == "" {
-		h.errorRedirect(w, r, redirectURL, "Missing required fields (name, body, slug, url)")
+	// Validate redirect URL against allowed origins before using it in any redirect
+	if redirectURL != "" && !h.isAllowedRedirect(redirectURL) {
+		http.Error(w, "Forbidden: redirect URL origin not allowed", http.StatusForbidden)
 		return
 	}
 
-	// Validate redirect URL against allowed origins to prevent open redirect
-	if !h.isAllowedRedirect(redirectURL) {
-		http.Error(w, "Forbidden: redirect URL origin not allowed", http.StatusForbidden)
+	// Validate required fields
+	if name == "" || body == "" || slug == "" || redirectURL == "" {
+		h.errorRedirect(w, r, redirectURL, "Missing required fields (name, body, slug, url)")
 		return
 	}
 
