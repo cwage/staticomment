@@ -22,6 +22,7 @@ type Comment struct {
 	Body    string `yaml:"body"`
 	Date    string `yaml:"date"`
 	Slug    string `yaml:"slug"`
+	ReplyTo string `yaml:"reply_to,omitempty"`
 }
 
 type CommentHandler struct {
@@ -56,6 +57,7 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	body := strings.TrimSpace(r.FormValue("body"))
 	slug := strings.TrimSpace(r.FormValue("slug"))
+	replyTo := strings.TrimSpace(r.FormValue("reply_to"))
 	redirectURL := strings.TrimSpace(r.FormValue("url"))
 
 	// Validate redirect URL against allowed origins before using it in any redirect
@@ -82,13 +84,38 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate reply_to format if provided
+	if replyTo != "" && !isValidSlug(replyTo) {
+		h.errorRedirect(w, r, redirectURL, "Invalid reply_to")
+		return
+	}
+
+	// Validate that a post matching this slug exists in the repo
+	if h.cfg.PostsPath != "" {
+		// Pull to ensure the local clone has the latest posts
+		if err := h.repo.Pull(); err != nil {
+			log.Printf("warning: git pull before post validation failed: %v", err)
+		}
+		found, err := h.postExists(slug)
+		if err != nil {
+			log.Printf("error checking post existence for %s: %v", slug, err)
+			h.errorRedirect(w, r, redirectURL, "Failed to validate post")
+			return
+		}
+		if !found {
+			h.errorRedirect(w, r, redirectURL, "Post not found")
+			return
+		}
+	}
+
 	// Build comment
 	comment := Comment{
-		Name:  name,
-		Email: email,
-		Body:  body,
-		Date:  time.Now().UTC().Format(time.RFC3339),
-		Slug:  slug,
+		Name:    name,
+		Email:   email,
+		Body:    body,
+		Date:    time.Now().UTC().Format(time.RFC3339),
+		Slug:    slug,
+		ReplyTo: replyTo,
 	}
 
 	// Write YAML file
@@ -197,6 +224,27 @@ func (h *CommentHandler) isAllowedRedirect(rawURL string) bool {
 		}
 	}
 	return false
+}
+
+func (h *CommentHandler) postExists(slug string) (bool, error) {
+	basePath := h.repo.FullPath(h.cfg.PostsPath)
+	// Try exact match first (e.g. 2024-01-02-my-post.md), then
+	// date-prefixed match (e.g. *-my-post.md) for Jekyll-style filenames
+	// where the slug may not include the date prefix.
+	patterns := []string{
+		filepath.Join(basePath, slug+".*"),
+		filepath.Join(basePath, "*-"+slug+".*"),
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return false, fmt.Errorf("globbing pattern %q: %w", pattern, err)
+		}
+		if len(matches) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func isValidSlug(slug string) bool {
