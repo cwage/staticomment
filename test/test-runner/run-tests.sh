@@ -212,6 +212,7 @@ export GIT_SSH_COMMAND="ssh -i /ssh-keys/id_ed25519 -o StrictHostKeyChecking=no 
 CLONE_DIR=$(mktemp -d)
 if ! git clone "git@${GIT_SERVER}:/home/git/repo.git" "$CLONE_DIR/repo" 2>/dev/null; then
     fail "Clone repo from git-server" "git clone failed"
+    rm -rf "$CLONE_DIR"
     echo ""
     echo "==========================="
     printf "Results: %d passed, %d failed, %d total\n" "$PASS" "$FAIL" "$TOTAL"
