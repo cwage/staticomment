@@ -22,6 +22,7 @@ type Comment struct {
 	Body    string `yaml:"body"`
 	Date    string `yaml:"date"`
 	Slug    string `yaml:"slug"`
+	ReplyTo string `yaml:"reply_to,omitempty"`
 }
 
 type CommentHandler struct {
@@ -56,6 +57,7 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	body := strings.TrimSpace(r.FormValue("body"))
 	slug := strings.TrimSpace(r.FormValue("slug"))
+	replyTo := strings.TrimSpace(r.FormValue("reply_to"))
 	redirectURL := strings.TrimSpace(r.FormValue("url"))
 
 	// Validate redirect URL against allowed origins before using it in any redirect
@@ -84,11 +86,12 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Build comment
 	comment := Comment{
-		Name:  name,
-		Email: email,
-		Body:  body,
-		Date:  time.Now().UTC().Format(time.RFC3339),
-		Slug:  slug,
+		Name:    name,
+		Email:   email,
+		Body:    body,
+		Date:    time.Now().UTC().Format(time.RFC3339),
+		Slug:    slug,
+		ReplyTo: replyTo,
 	}
 
 	// Write YAML file
