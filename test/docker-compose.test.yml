@@ -1,0 +1,63 @@
+services:
+  init:
+    image: alpine:3.21
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache openssh-client &&
+        ssh-keygen -t ed25519 -f /ssh-keys/id_ed25519 -N '' -q &&
+        chmod 600 /ssh-keys/id_ed25519 &&
+        chmod 644 /ssh-keys/id_ed25519.pub
+    volumes:
+      - ssh-keys:/ssh-keys
+
+  git-server:
+    build: ./git-server
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - ssh-keys:/ssh-keys:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "22"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  staticomment:
+    build: ..
+    depends_on:
+      git-server:
+        condition: service_healthy
+    environment:
+      STATICOMMENT_GIT_REPO: "git@git-server:/home/git/repo.git"
+      STATICOMMENT_BRANCH: "main"
+      STATICOMMENT_COMMENTS_PATH: "_data/comments"
+      STATICOMMENT_PORT: "8080"
+      STATICOMMENT_ALLOWED_ORIGINS: "http://testsite.local"
+      STATICOMMENT_SSH_KEY_PATH: "/ssh-keys/id_ed25519"
+      STATICOMMENT_SSH_INSECURE: "1"
+      STATICOMMENT_POSTS_PATH: "_posts"
+    volumes:
+      - ssh-keys:/ssh-keys:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  test-runner:
+    build: ./test-runner
+    depends_on:
+      staticomment:
+        condition: service_healthy
+    environment:
+      STATICOMMENT_URL: "http://staticomment:8080"
+      GIT_SERVER: "git-server"
+      ALLOWED_ORIGIN: "http://testsite.local"
+    volumes:
+      - ssh-keys:/ssh-keys:ro
+
+volumes:
+  ssh-keys:
