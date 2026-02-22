@@ -18,7 +18,7 @@ func main() {
 	log.Printf("  repo: %s (branch: %s)", cfg.GitRepo, cfg.Branch)
 	log.Printf("  comments path: %s", cfg.CommentsPath)
 	if cfg.PostsPath != "" {
-		log.Printf("  posts path: %s (slug validation enabled)", cfg.PostsPath)
+		log.Printf("  posts path: %s (post existence validation enabled)", cfg.PostsPath)
 	}
 	log.Printf("  allowed origins: %v", cfg.AllowedOrigins)
 
