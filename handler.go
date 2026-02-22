@@ -84,6 +84,20 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate reply_to format if provided
+	if replyTo != "" && !isValidSlug(replyTo) {
+		h.errorRedirect(w, r, redirectURL, "Invalid reply_to")
+		return
+	}
+
+	// Validate that a post matching this slug exists in the repo
+	if h.cfg.PostsPath != "" {
+		if !h.postExists(slug) {
+			h.errorRedirect(w, r, redirectURL, "Post not found")
+			return
+		}
+	}
+
 	// Build comment
 	comment := Comment{
 		Name:    name,
@@ -200,6 +214,16 @@ func (h *CommentHandler) isAllowedRedirect(rawURL string) bool {
 		}
 	}
 	return false
+}
+
+func (h *CommentHandler) postExists(slug string) bool {
+	pattern := filepath.Join(h.repo.FullPath(h.cfg.PostsPath), slug+".*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		log.Printf("error globbing for post %s: %v", slug, err)
+		return false
+	}
+	return len(matches) > 0
 }
 
 func isValidSlug(slug string) bool {

@@ -17,6 +17,9 @@ func main() {
 	log.Printf("staticomment starting on :%s", cfg.Port)
 	log.Printf("  repo: %s (branch: %s)", cfg.GitRepo, cfg.Branch)
 	log.Printf("  comments path: %s", cfg.CommentsPath)
+	if cfg.PostsPath != "" {
+		log.Printf("  posts path: %s (slug validation enabled)", cfg.PostsPath)
+	}
 	log.Printf("  allowed origins: %v", cfg.AllowedOrigins)
 
 	repo := NewGitRepo(cfg)

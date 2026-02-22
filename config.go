@@ -12,6 +12,7 @@ type Config struct {
 	GitRepo        string
 	Branch         string
 	CommentsPath   string
+	PostsPath      string
 	Port           string
 	AllowedOrigins []string
 	SSHKeyPath     string
@@ -22,6 +23,7 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		Branch:       envOrDefault("STATICOMMENT_BRANCH", "main"),
 		CommentsPath: envOrDefault("STATICOMMENT_COMMENTS_PATH", "_data/comments"),
+		PostsPath:    os.Getenv("STATICOMMENT_POSTS_PATH"),
 		Port:         envOrDefault("STATICOMMENT_PORT", "8080"),
 		SSHKeyPath:   envOrDefault("STATICOMMENT_SSH_KEY_PATH", "/app/.ssh/id_ed25519"),
 	}
@@ -35,6 +37,17 @@ func LoadConfig() (*Config, error) {
 	cfg.CommentsPath = filepath.Clean(cfg.CommentsPath)
 	if strings.HasPrefix(cfg.CommentsPath, "..") {
 		return nil, fmt.Errorf("STATICOMMENT_COMMENTS_PATH must not escape the repo directory")
+	}
+
+	// Validate PostsPath if set (empty disables post validation)
+	if cfg.PostsPath != "" {
+		if filepath.IsAbs(cfg.PostsPath) {
+			return nil, fmt.Errorf("STATICOMMENT_POSTS_PATH must be a relative path")
+		}
+		cfg.PostsPath = filepath.Clean(cfg.PostsPath)
+		if strings.HasPrefix(cfg.PostsPath, "..") {
+			return nil, fmt.Errorf("STATICOMMENT_POSTS_PATH must not escape the repo directory")
+		}
 	}
 
 	cfg.GitRepo = os.Getenv("STATICOMMENT_GIT_REPO")
