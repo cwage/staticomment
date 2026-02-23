@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +19,13 @@ type Config struct {
 	AllowedOrigins []string
 	SSHKeyPath     string
 	SSHInsecure    bool
+
+	HoneypotField   string
+	RateLimitWindow int
+	RateLimitMax    int
+	MaxLinks        int
+	BlockedPatterns []*regexp.Regexp
+	MinSubmitTime   int
 }
 
 func LoadConfig() (*Config, error) {
@@ -73,6 +82,48 @@ func LoadConfig() (*Config, error) {
 	if len(cfg.AllowedOrigins) == 0 {
 		return nil, fmt.Errorf("STATICOMMENT_ALLOWED_ORIGINS must contain at least one origin")
 	}
+
+	// Spam mitigation config
+	cfg.HoneypotField = envOrDefault("STATICOMMENT_HONEYPOT_FIELD", "website")
+
+	rateLimitWindow, err := strconv.Atoi(envOrDefault("STATICOMMENT_RATE_LIMIT_WINDOW", "60"))
+	if err != nil || rateLimitWindow < 0 {
+		return nil, fmt.Errorf("STATICOMMENT_RATE_LIMIT_WINDOW must be a non-negative integer")
+	}
+	cfg.RateLimitWindow = rateLimitWindow
+
+	rateLimitMax, err := strconv.Atoi(envOrDefault("STATICOMMENT_RATE_LIMIT_MAX", "5"))
+	if err != nil || rateLimitMax < 0 {
+		return nil, fmt.Errorf("STATICOMMENT_RATE_LIMIT_MAX must be a non-negative integer")
+	}
+	cfg.RateLimitMax = rateLimitMax
+
+	maxLinks, err := strconv.Atoi(envOrDefault("STATICOMMENT_MAX_LINKS", "3"))
+	if err != nil || maxLinks < 0 {
+		return nil, fmt.Errorf("STATICOMMENT_MAX_LINKS must be a non-negative integer")
+	}
+	cfg.MaxLinks = maxLinks
+
+	blockedPatternsStr := os.Getenv("STATICOMMENT_BLOCKED_PATTERNS")
+	if blockedPatternsStr != "" {
+		for _, p := range strings.Split(blockedPatternsStr, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			re, err := regexp.Compile("(?i)" + p)
+			if err != nil {
+				return nil, fmt.Errorf("STATICOMMENT_BLOCKED_PATTERNS: invalid regex %q: %w", p, err)
+			}
+			cfg.BlockedPatterns = append(cfg.BlockedPatterns, re)
+		}
+	}
+
+	minSubmitTime, err := strconv.Atoi(envOrDefault("STATICOMMENT_MIN_SUBMIT_TIME", "5"))
+	if err != nil || minSubmitTime < 0 {
+		return nil, fmt.Errorf("STATICOMMENT_MIN_SUBMIT_TIME must be a non-negative integer")
+	}
+	cfg.MinSubmitTime = minSubmitTime
 
 	return cfg, nil
 }

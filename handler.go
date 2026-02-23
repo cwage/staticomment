@@ -26,12 +26,13 @@ type Comment struct {
 }
 
 type CommentHandler struct {
-	cfg  *Config
-	repo *GitRepo
+	cfg         *Config
+	repo        *GitRepo
+	rateLimiter *RateLimiter
 }
 
-func NewCommentHandler(cfg *Config, repo *GitRepo) *CommentHandler {
-	return &CommentHandler{cfg: cfg, repo: repo}
+func NewCommentHandler(cfg *Config, repo *GitRepo, rl *RateLimiter) *CommentHandler {
+	return &CommentHandler{cfg: cfg, repo: repo, rateLimiter: rl}
 }
 
 func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +51,27 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	// Honeypot check — silently discard if filled (bots see fake success)
+	if checkHoneypot(r, h.cfg.HoneypotField) {
+		redirectURL := strings.TrimSpace(r.FormValue("url"))
+		if redirectURL != "" {
+			u, err := url.Parse(redirectURL)
+			if err == nil {
+				u.Fragment = "comment-submitted"
+				http.Redirect(w, r, u.String(), http.StatusSeeOther)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Rate limiting by IP
+	if !h.rateLimiter.Allow(extractIP(r.RemoteAddr)) {
+		http.Error(w, "Too many requests", http.StatusTooManyRequests)
 		return
 	}
 
@@ -72,9 +94,21 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Timestamp check — reject submissions that are too fast
+	if checkTimestamp(r, h.cfg.MinSubmitTime) {
+		h.errorRedirect(w, r, redirectURL, "Submission too fast")
+		return
+	}
+
 	// Validate body length
 	if len(body) > defaultMaxBodyLen {
 		h.errorRedirect(w, r, redirectURL, "Comment body too long")
+		return
+	}
+
+	// Content checks — links and blocked patterns
+	if msg := checkBodyContent(body, h.cfg.MaxLinks, h.cfg.BlockedPatterns); msg != "" {
+		h.errorRedirect(w, r, redirectURL, msg)
 		return
 	}
 

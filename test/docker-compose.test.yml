@@ -40,6 +40,12 @@ services:
       STATICOMMENT_SSH_KEY_PATH: "/ssh-keys/id_ed25519"
       STATICOMMENT_SSH_INSECURE: "1"
       STATICOMMENT_POSTS_PATH: "_posts"
+      STATICOMMENT_HONEYPOT_FIELD: "website"
+      STATICOMMENT_RATE_LIMIT_WINDOW: "5"
+      STATICOMMENT_RATE_LIMIT_MAX: "30"
+      STATICOMMENT_MAX_LINKS: "2"
+      STATICOMMENT_BLOCKED_PATTERNS: "buy now,click here,casino"
+      STATICOMMENT_MIN_SUBMIT_TIME: "1"
     volumes:
       - ssh-keys:/ssh-keys:ro
     healthcheck:

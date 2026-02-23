@@ -65,6 +65,27 @@ assert_status "POST /health returns 405" "405" "$STATUS"
 STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$STATICOMMENT_URL/comment")
 assert_status "GET /comment returns 405" "405" "$STATUS"
 
+# ── Spam: Rate limiting ─────────────────────────────────────
+echo ""
+echo "--- Spam: Rate limiting ---"
+
+# Send max (30) requests to fill the rate limit bucket
+for i in $(seq 1 30); do
+    curl -s -o /dev/null -X POST -H "Origin: $ALLOWED_ORIGIN" \
+        -d "body=ratelimit&slug=test-post&url=$REDIRECT_URL" \
+        "$STATICOMMENT_URL/comment"
+done
+
+# 31st request should be rate limited
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST -H "Origin: $ALLOWED_ORIGIN" \
+    -d "body=ratelimit&slug=test-post&url=$REDIRECT_URL" \
+    "$STATICOMMENT_URL/comment")
+assert_status "Rate limit exceeded returns 429" "429" "$STATUS"
+
+# Wait for rate limit window to expire before remaining tests
+sleep 6
+
 # ── 3. Invalid origin ────────────────────────────────────────
 echo ""
 echo "--- Origin validation ---"
@@ -159,6 +180,59 @@ STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
     --data-urlencode "body=$LONG_BODY" \
     "$STATICOMMENT_URL/comment")
 assert_status "Body too long rejected (303)" "303" "$STATUS"
+
+# ── Spam: Honeypot ──────────────────────────────────────────
+echo ""
+echo "--- Spam: Honeypot ---"
+
+RESULT=$(curl -s -o /dev/null -w "%{http_code}\n%{redirect_url}" \
+    -X POST -H "Origin: $ALLOWED_ORIGIN" \
+    -d "name=SpamBot&body=Buy+stuff&slug=test-post&url=$REDIRECT_URL&website=http://spam.com" \
+    "$STATICOMMENT_URL/comment")
+STATUS=$(echo "$RESULT" | sed -n '1p')
+REDIR=$(echo "$RESULT" | sed -n '2p')
+assert_status "Honeypot filled returns 303 (silent discard)" "303" "$STATUS"
+assert_contains "Honeypot redirect looks like success" "$REDIR" "#comment-submitted"
+
+# ── Spam: Content checks ───────────────────────────────────
+echo ""
+echo "--- Spam: Content checks ---"
+
+# Too many links (max is 2 in test config)
+REDIR=$(curl -s -o /dev/null -w "%{redirect_url}" \
+    -X POST -H "Origin: $ALLOWED_ORIGIN" \
+    -d "name=Linker&slug=test-post&url=$REDIRECT_URL" \
+    --data-urlencode "body=Check http://a.com and http://b.com and http://c.com" \
+    "$STATICOMMENT_URL/comment")
+assert_contains "Too many links rejected" "$REDIR" "Too+many+links"
+
+# Blocked pattern
+REDIR=$(curl -s -o /dev/null -w "%{redirect_url}" \
+    -X POST -H "Origin: $ALLOWED_ORIGIN" \
+    -d "name=Spammer&slug=test-post&url=$REDIRECT_URL" \
+    --data-urlencode "body=You should buy now and save" \
+    "$STATICOMMENT_URL/comment")
+assert_contains "Blocked pattern rejected" "$REDIR" "blocked+content"
+
+# ── Spam: Timestamp validation ──────────────────────────────
+echo ""
+echo "--- Spam: Timestamp validation ---"
+
+# Submission too fast (timestamp = now, 0 seconds elapsed, min is 1)
+NOW_TS=$(date +%s)
+REDIR=$(curl -s -o /dev/null -w "%{redirect_url}" \
+    -X POST -H "Origin: $ALLOWED_ORIGIN" \
+    -d "name=FastBot&body=Too+fast&slug=test-post&url=$REDIRECT_URL&_timestamp=$NOW_TS" \
+    "$STATICOMMENT_URL/comment")
+assert_contains "Timestamp too fast rejected" "$REDIR" "Submission+too+fast"
+
+# Valid timestamp (10 seconds ago, well above min of 1)
+OLD_TS=$((NOW_TS - 10))
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST -H "Origin: $ALLOWED_ORIGIN" \
+    -d "name=ValidTimestamp&body=This+is+fine&slug=test-post&url=$REDIRECT_URL&_timestamp=$OLD_TS" \
+    "$STATICOMMENT_URL/comment")
+assert_status "Valid timestamp accepted (303)" "303" "$STATUS"
 
 # ── 11. Successful comment ────────────────────────────────────
 echo ""
