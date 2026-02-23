@@ -21,6 +21,21 @@ func main() {
 		log.Printf("  posts path: %s (post existence validation enabled)", cfg.PostsPath)
 	}
 	log.Printf("  allowed origins: %v", cfg.AllowedOrigins)
+	if cfg.HoneypotField != "" {
+		log.Printf("  honeypot field: %s", cfg.HoneypotField)
+	}
+	if cfg.RateLimitMax > 0 {
+		log.Printf("  rate limit: %d requests per %d seconds", cfg.RateLimitMax, cfg.RateLimitWindow)
+	}
+	if cfg.MaxLinks > 0 {
+		log.Printf("  max links: %d", cfg.MaxLinks)
+	}
+	if len(cfg.BlockedPatterns) > 0 {
+		log.Printf("  blocked patterns: %d", len(cfg.BlockedPatterns))
+	}
+	if cfg.MinSubmitTime > 0 {
+		log.Printf("  min submit time: %ds", cfg.MinSubmitTime)
+	}
 
 	repo := NewGitRepo(cfg)
 	if err := repo.Clone(); err != nil {
@@ -34,7 +49,8 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-	mux.Handle("POST /comment", NewCommentHandler(cfg, repo))
+	rateLimiter := NewRateLimiter(cfg.RateLimitWindow, cfg.RateLimitMax)
+	mux.Handle("POST /comment", NewCommentHandler(cfg, repo, rateLimiter))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
