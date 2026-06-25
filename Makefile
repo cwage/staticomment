@@ -1,7 +1,12 @@
-.PHONY: build run shell stop test test-clean
+.PHONY: build run shell stop test test-unit test-clean
 
 build:
 	docker build -t staticomment .
+
+# Go unit tests, run in a container so no local Go toolchain is required.
+test-unit:
+	docker run --rm -v "$(CURDIR)":/src -w /src golang:1.23-alpine \
+		sh -c 'test -z "$$(gofmt -l .)" && go vet ./... && go test ./... -count=1'
 
 run:
 	docker compose up -d

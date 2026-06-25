@@ -26,6 +26,9 @@ type Config struct {
 	MaxLinks        int
 	BlockedPatterns []*regexp.Regexp
 	MinSubmitTime   int
+
+	TurnstileSecret    string
+	TurnstileVerifyURL string
 }
 
 func LoadConfig() (*Config, error) {
@@ -124,6 +127,11 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("STATICOMMENT_MIN_SUBMIT_TIME must be a non-negative integer")
 	}
 	cfg.MinSubmitTime = minSubmitTime
+
+	// Cloudflare Turnstile (CAPTCHA). Disabled unless a secret is configured.
+	// The verify URL override exists mainly for testing against a mock endpoint.
+	cfg.TurnstileSecret = os.Getenv("STATICOMMENT_TURNSTILE_SECRET")
+	cfg.TurnstileVerifyURL = os.Getenv("STATICOMMENT_TURNSTILE_VERIFY_URL")
 
 	return cfg, nil
 }

@@ -15,6 +15,8 @@ Lightweight comment server for static sites. Receives form POSTs, writes YAML co
 - `config.go` — env var parsing and validation
 - `git.go` — git clone/pull/commit/push via os/exec, mutex-locked
 - `handler.go` — HTTP handler for POST /comment
+- `spam.go` — rate limiting, honeypot, link/timestamp heuristics
+- `turnstile.go` — Cloudflare Turnstile server-side token verification
 - `main.go` — entry point, config, server setup
 
 ## Build & Run
@@ -37,3 +39,11 @@ make stop     # docker compose down
 | `STATICOMMENT_ALLOWED_ORIGINS` | yes | — | Comma-separated allowed origins |
 | `STATICOMMENT_SSH_KEY_PATH` | no | `/app/.ssh/id_ed25519` | Path to SSH deploy key |
 | `STATICOMMENT_SSH_INSECURE` | no | `0` | Set to `1` to disable SSH host key checking |
+| `STATICOMMENT_HONEYPOT_FIELD` | no | `website` | Hidden form field; filled = silently discarded |
+| `STATICOMMENT_RATE_LIMIT_WINDOW` | no | `60` | Rate-limit window (seconds) |
+| `STATICOMMENT_RATE_LIMIT_MAX` | no | `5` | Max submissions per IP per window (`0` disables) |
+| `STATICOMMENT_MAX_LINKS` | no | `3` | Max links in body (`0` disables) |
+| `STATICOMMENT_BLOCKED_PATTERNS` | no | — | Comma-separated case-insensitive body regexes |
+| `STATICOMMENT_MIN_SUBMIT_TIME` | no | `5` | Min seconds from hidden `_timestamp` (`0` disables) |
+| `STATICOMMENT_TURNSTILE_SECRET` | no | — | Cloudflare Turnstile secret; set = require + verify token |
+| `STATICOMMENT_TURNSTILE_VERIFY_URL` | no | Cloudflare | Override siteverify endpoint (testing) |
