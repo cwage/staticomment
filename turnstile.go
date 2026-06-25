@@ -78,6 +78,12 @@ func (t *TurnstileVerifier) Verify(ctx context.Context, token, remoteIP string) 
 	}
 	defer resp.Body.Close()
 
+	// A non-200 indicates an endpoint/proxy problem, not a verdict. Treat it as
+	// a hard failure rather than risk trusting whatever body accompanies it.
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("turnstile verify returned HTTP %d", resp.StatusCode)
+	}
+
 	var tr turnstileResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
 		return fmt.Errorf("decoding turnstile response: %w", err)

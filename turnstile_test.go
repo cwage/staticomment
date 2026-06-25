@@ -56,6 +56,20 @@ func TestTurnstileVerify_Rejected(t *testing.T) {
 	}
 }
 
+func TestTurnstileVerify_NonOKStatusFailsClosed(t *testing.T) {
+	// Even with a success body, a non-200 status must not be trusted.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`{"success":true}`))
+	}))
+	defer srv.Close()
+
+	v := NewTurnstileVerifier("test-secret", srv.URL)
+	if err := v.Verify(context.Background(), "any-token", ""); err == nil {
+		t.Fatal("expected non-200 response to fail closed, got nil")
+	}
+}
+
 func TestTurnstileVerify_MissingToken(t *testing.T) {
 	// No server should be contacted when the token is empty.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

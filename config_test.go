@@ -34,6 +34,26 @@ func TestLoadConfig_AcceptsValidTurnstileVerifyURL(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_RejectsPlainHTTPVerifyURL(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("STATICOMMENT_TURNSTILE_SECRET", "secret")
+	t.Setenv("STATICOMMENT_TURNSTILE_VERIFY_URL", "http://verify.example.com/siteverify")
+
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected error for plain http verify URL on a non-loopback host, got nil")
+	}
+}
+
+func TestLoadConfig_AllowsLoopbackHTTPVerifyURL(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("STATICOMMENT_TURNSTILE_SECRET", "secret")
+	t.Setenv("STATICOMMENT_TURNSTILE_VERIFY_URL", "http://127.0.0.1:8080/siteverify")
+
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("expected loopback http verify URL to be allowed, got error: %v", err)
+	}
+}
+
 func TestLoadConfig_TurnstileDisabledByDefault(t *testing.T) {
 	setRequiredEnv(t)
 
