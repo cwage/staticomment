@@ -132,6 +132,14 @@ func LoadConfig() (*Config, error) {
 	// The verify URL override exists mainly for testing against a mock endpoint.
 	cfg.TurnstileSecret = os.Getenv("STATICOMMENT_TURNSTILE_SECRET")
 	cfg.TurnstileVerifyURL = os.Getenv("STATICOMMENT_TURNSTILE_VERIFY_URL")
+	// Validate the override at load time so a typo fails fast at startup
+	// rather than silently rejecting every submission at runtime.
+	if cfg.TurnstileVerifyURL != "" {
+		u, err := url.Parse(cfg.TurnstileVerifyURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return nil, fmt.Errorf("STATICOMMENT_TURNSTILE_VERIFY_URL must be a valid absolute URL with scheme and host, got %q", cfg.TurnstileVerifyURL)
+		}
+	}
 
 	return cfg, nil
 }

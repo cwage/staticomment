@@ -98,9 +98,14 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// limiting so it can't be used to amplify outbound verify requests, and
 	// after redirect validation so the error redirect target is already safe.
 	if h.turnstile != nil {
-		token := r.FormValue(turnstileTokenField)
+		token := strings.TrimSpace(r.FormValue(turnstileTokenField))
 		if err := h.turnstile.Verify(r.Context(), token, extractIP(r.RemoteAddr)); err != nil {
-			log.Printf("turnstile verification failed for %s: %v", extractIP(r.RemoteAddr), err)
+			// A missing token is the expected case for bots POSTing directly
+			// to the endpoint — reject it quietly to avoid log noise, and only
+			// log when a token was actually supplied but failed verification.
+			if token != "" {
+				log.Printf("turnstile verification failed for %s: %v", extractIP(r.RemoteAddr), err)
+			}
 			h.errorRedirect(w, r, redirectURL, "Captcha verification failed")
 			return
 		}
