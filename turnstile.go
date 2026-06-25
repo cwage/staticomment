@@ -4,11 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+// maxVerifyResponseBytes bounds how much of the siteverify response we read.
+// Cloudflare's response is well under a kilobyte; this just guards against a
+// misbehaving or compromised endpoint returning an unbounded body.
+const maxVerifyResponseBytes = 1 << 20
 
 // defaultTurnstileVerifyURL is Cloudflare's server-side token verification endpoint.
 const defaultTurnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
@@ -85,7 +91,7 @@ func (t *TurnstileVerifier) Verify(ctx context.Context, token, remoteIP string) 
 	}
 
 	var tr turnstileResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxVerifyResponseBytes)).Decode(&tr); err != nil {
 		return fmt.Errorf("decoding turnstile response: %w", err)
 	}
 	if !tr.Success {
