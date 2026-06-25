@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,6 +27,9 @@ type Config struct {
 	MaxLinks        int
 	BlockedPatterns []*regexp.Regexp
 	MinSubmitTime   int
+
+	TurnstileSecret    string
+	TurnstileVerifyURL string
 }
 
 func LoadConfig() (*Config, error) {
@@ -125,7 +129,34 @@ func LoadConfig() (*Config, error) {
 	}
 	cfg.MinSubmitTime = minSubmitTime
 
+	// Cloudflare Turnstile (CAPTCHA). Disabled unless a secret is configured.
+	// The verify URL override exists mainly for testing against a mock endpoint.
+	cfg.TurnstileSecret = os.Getenv("STATICOMMENT_TURNSTILE_SECRET")
+	cfg.TurnstileVerifyURL = os.Getenv("STATICOMMENT_TURNSTILE_VERIFY_URL")
+	// Validate the override at load time so a typo fails fast at startup
+	// rather than silently rejecting every submission at runtime.
+	if cfg.TurnstileVerifyURL != "" {
+		u, err := url.Parse(cfg.TurnstileVerifyURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return nil, fmt.Errorf("STATICOMMENT_TURNSTILE_VERIFY_URL must be an absolute http(s) URL with a host, got %q", cfg.TurnstileVerifyURL)
+		}
+		// The secret and token travel in the request body, so plain http would
+		// leak them. Require https except against a loopback host (test mocks).
+		if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+			return nil, fmt.Errorf("STATICOMMENT_TURNSTILE_VERIFY_URL must use https (http is only allowed for localhost), got %q", cfg.TurnstileVerifyURL)
+		}
+	}
+
 	return cfg, nil
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP literal.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func envOrDefault(key, fallback string) string {

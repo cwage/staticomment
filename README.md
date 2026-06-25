@@ -26,6 +26,26 @@ All configuration is via environment variables:
 | `STATICOMMENT_SSH_KEY_PATH` | No | `/app/.ssh/id_ed25519` | Path to SSH deploy key |
 | `STATICOMMENT_SSH_INSECURE` | No | `0` | Set to `1` to disable strict host key checking |
 
+### Spam mitigation
+
+All of these are optional and layer on top of origin validation.
+
+| Variable | Default | Description |
+|---|---|---|
+| `STATICOMMENT_HONEYPOT_FIELD` | `website` | Name of a hidden form field; submissions that fill it are silently discarded. |
+| `STATICOMMENT_RATE_LIMIT_WINDOW` | `60` | Rate-limit window in seconds. |
+| `STATICOMMENT_RATE_LIMIT_MAX` | `5` | Max submissions per IP per window (`0` disables). |
+| `STATICOMMENT_MAX_LINKS` | `3` | Reject a comment body with more than this many links (`0` disables). |
+| `STATICOMMENT_BLOCKED_PATTERNS` | | Comma-separated case-insensitive regexes; a body matching any is rejected. |
+| `STATICOMMENT_MIN_SUBMIT_TIME` | `5` | Reject submissions faster than this many seconds, measured from a hidden `_timestamp` field (`0` disables). |
+| `STATICOMMENT_TURNSTILE_SECRET` | | Cloudflare Turnstile secret key. When set, every comment must carry a valid Turnstile token, verified server-side with Cloudflare. Unset = disabled. |
+| `STATICOMMENT_TURNSTILE_VERIFY_URL` | Cloudflare siteverify | Override the verification endpoint (mainly for testing). |
+
+Honeypot, `_timestamp`, and Turnstile all depend on the *form* rendering the
+corresponding fields/widget. Turnstile is the only one of these that defends
+against bots POSTing directly to the endpoint without rendering the form, since
+its token cannot be forged without solving the challenge in a real browser.
+
 ## Deployment
 
 ### Docker
@@ -72,6 +92,8 @@ Accepts `application/x-www-form-urlencoded` with the following fields:
 | `slug` | Yes | Post identifier (alphanumeric, hyphens, underscores) |
 | `url` | Yes | Redirect URL after submission |
 | `email` | No | Commenter's email |
+| `reply_to` | No | ID of the comment this one replies to |
+| `cf-turnstile-response` | If Turnstile enabled | Token emitted by the Turnstile widget |
 
 On success, redirects to `url#comment-submitted`. On error, redirects to `url?comment_error=<message>`.
 
@@ -88,7 +110,7 @@ Add a comment form to your post layout that POSTs to your staticomment instance.
 - **Pushes directly to the configured branch** (default `main`). There is no PR-based workflow or moderation queue — comments go live on the next site build.
 - **Single repo only.** One staticomment instance serves one git repository.
 - **Synchronous git operations.** Each comment submission blocks until the commit is pushed. A global mutex serializes all git operations, so concurrent submissions are queued.
-- **No built-in spam protection (yet).** Origin validation is enforced, but there is no rate limiting, CAPTCHA, or honeypot field yet.
+- **Spam protection is heuristic by default.** Origin validation, honeypot, rate limiting, link limits, blocked patterns, and a submit-time gate are built in (see [Spam mitigation](#spam-mitigation)). For bots that POST directly to the endpoint, enable Cloudflare Turnstile, which is server-side verified and unforgeable.
 - **No notification system.** There are no webhooks or email alerts when comments are submitted.
 
 ## License

@@ -36,6 +36,9 @@ func main() {
 	if cfg.MinSubmitTime > 0 {
 		log.Printf("  min submit time: %ds", cfg.MinSubmitTime)
 	}
+	if cfg.TurnstileSecret != "" {
+		log.Printf("  turnstile: enabled (server-side token verification)")
+	}
 
 	repo := NewGitRepo(cfg)
 	if err := repo.Clone(); err != nil {

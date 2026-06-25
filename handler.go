@@ -29,10 +29,16 @@ type CommentHandler struct {
 	cfg         *Config
 	repo        *GitRepo
 	rateLimiter *RateLimiter
+	turnstile   *TurnstileVerifier
 }
 
 func NewCommentHandler(cfg *Config, repo *GitRepo, rl *RateLimiter) *CommentHandler {
-	return &CommentHandler{cfg: cfg, repo: repo, rateLimiter: rl}
+	return &CommentHandler{
+		cfg:         cfg,
+		repo:        repo,
+		rateLimiter: rl,
+		turnstile:   NewTurnstileVerifier(cfg.TurnstileSecret, cfg.TurnstileVerifyURL),
+	}
 }
 
 func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +92,23 @@ func (h *CommentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if redirectURL != "" && !h.isAllowedRedirect(redirectURL) {
 		http.Error(w, "Forbidden: redirect URL origin not allowed", http.StatusForbidden)
 		return
+	}
+
+	// Turnstile (CAPTCHA) verification — only when configured. Runs after rate
+	// limiting so it can't be used to amplify outbound verify requests, and
+	// after redirect validation so the error redirect target is already safe.
+	if h.turnstile != nil {
+		token := strings.TrimSpace(r.FormValue(turnstileTokenField))
+		if err := h.turnstile.Verify(r.Context(), token, extractIP(r.RemoteAddr)); err != nil {
+			// A missing token is the expected case for bots POSTing directly
+			// to the endpoint — reject it quietly to avoid log noise, and only
+			// log when a token was actually supplied but failed verification.
+			if token != "" {
+				log.Printf("turnstile verification failed for %s: %v", extractIP(r.RemoteAddr), err)
+			}
+			h.errorRedirect(w, r, redirectURL, "Captcha verification failed")
+			return
+		}
 	}
 
 	// Validate required fields
